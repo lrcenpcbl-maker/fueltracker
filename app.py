@@ -9,9 +9,15 @@ import json
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="FuelGuard 72h", page_icon="⛽")
 LOCKOUT_HOURS = 72
-APP_URL = "https://fuel-tracker.streamlit.app" # Replace with your live URL
+APP_URL = "https://fuel-tracker.streamlit.app" # Update this to your live URL
 
-# --- 2. SECURE DATABASE CONNECTION ---
+# --- 2. DATABASE CONNECTION ---
+@st.cache_data(ttl=10) # Cache only for 10 seconds to ensure freshness
+def fetch_data(_spread_obj):
+    df = _spread_obj.sheet_to_df(index=0)
+    df.columns = df.columns.str.strip() # Clean headers
+    return df
+
 if "gcp_service_account" in st.secrets:
     creds = dict(st.secrets["gcp_service_account"])
 else:
@@ -19,29 +25,21 @@ else:
         with open("credentials.json") as f:
             creds = json.load(f)
     except FileNotFoundError:
-        st.error("Credentials not found. Please setup Streamlit Secrets.")
+        st.error("Credentials missing. Setup Streamlit Secrets.")
         st.stop()
 
 try:
-    # Connect to the Google Sheet 'FuelTracker'
     spread = Spread("FuelTracker", config=creds)
-    df = spread.sheet_to_df(index=0)
-    # Clean headers: remove accidental spaces
-    df.columns = df.columns.str.strip()
+    # Load data
+    df = fetch_data(spread)
 except Exception as e:
-    st.error(f"Google Sheets Connection Error: {e}")
+    st.error(f"Google Sheets Error: {e}")
     st.stop()
 
 # --- 3. CORE LOGIC (Case-Insensitive) ---
-def get_rider_status(rider_id):
-    if df.empty:
-        return "EMPTY_DATABASE", None, None
-    
-    # Normalize ID for comparison (lowercase and no spaces)
+def get_rider_status(rider_id, current_df):
     search_id = str(rider_id).strip().lower()
-    
-    # Create temporary matching column
-    temp_df = df.copy()
+    temp_df = current_df.copy()
     temp_df['match_id'] = temp_df['RiderID'].astype(str).str.strip().str.lower()
     
     rider_row = temp_df[temp_df['match_id'] == search_id]
@@ -58,27 +56,24 @@ def get_rider_status(rider_id):
     try:
         last_dt = datetime.strptime(str(last_refill_val), "%Y-%m-%d %H:%M:%S")
         unlock_dt = last_dt + timedelta(hours=LOCKOUT_HOURS)
-    except Exception:
+        if datetime.now() < unlock_dt:
+            return "LOCKED", name, unlock_dt
+        return "ELIGIBLE", name, unlock_dt
+    except:
         return "DATE_ERROR", name, None
-    
-    if datetime.now() < unlock_dt:
-        return "LOCKED", name, unlock_dt
-    return "ELIGIBLE", name, unlock_dt
 
-# --- 4. MAIN INTERFACE ---
+# --- 4. MAIN UI ---
 st.title("⛽ FuelGuard 72-Hour System")
 
-# Get ID from URL parameter (e.g. ?rider=BDP123)
+# URL parameter support
 query_params = st.query_params
-scanned_id = query_params.get("rider", st.text_input("Enter/Scan Rider ID (Case-Insensitive)"))
+scanned_id = query_params.get("rider", st.text_input("Enter/Scan Rider ID"))
 
 if scanned_id:
-    status, rider_name, unlock_time = get_rider_status(scanned_id)
+    status, rider_name, unlock_time = get_rider_status(scanned_id, df)
     
     if status == "NOT_FOUND":
-        st.warning(f"⚠️ Rider ID '{scanned_id}' not found in FuelTracker.")
-    elif status == "DATE_ERROR":
-        st.error(f"❌ Date format error in Google Sheet for {rider_name}.")
+        st.warning(f"ID '{scanned_id}' not found.")
     else:
         st.header(f"Rider: {rider_name}")
         
@@ -86,37 +81,40 @@ if scanned_id:
             st.error("### ❌ ACCESS DENIED")
             diff = unlock_time - datetime.now()
             st.subheader(f"Wait: {diff.days}d {diff.seconds//3600}h remaining")
-            st.info(f"Next Refill: {unlock_time.strftime('%b %d, %I:%M %p')}")
+            st.info(f"Available on: {unlock_time.strftime('%b %d, %I:%M %p')}")
         
         else:
             st.success("### ✅ ELIGIBLE")
-            liters = st.number_input("Liters Issued", min_value=1.0, max_value=50.0, step=0.5)
-            
-            if st.button("Confirm & Save Transaction"):
-                # Use current time
+            if st.button("Confirm & Save Refill"):
                 now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 
-                # Find the correct row in the original dataframe
+                # Update the main dataframe
                 search_id = str(scanned_id).strip().lower()
-                # Update Last_Refill where lowercase ID matches
                 mask = df['RiderID'].astype(str).str.strip().str.lower() == search_id
                 df.loc[mask, 'Last_Refill'] = now_str
                 
-                # Save to Google Sheets
-                spread.df_to_sheet(df, index=False, replace=True)
-                st.cache_data.clear()
-                st.balloons()
-                st.success("Record Updated Successfully!")
+                # SAVE TO GOOGLE SHEETS
+                try:
+                    spread.df_to_sheet(df, index=False, replace=True)
+                    st.cache_data.clear() # CLEAR CACHE IMMEDIATELY
+                    st.success("Record saved permanently to Google Sheets!")
+                    st.balloons()
+                    st.rerun() # Refresh the page to show "LOCKED" status
+                except Exception as e:
+                    st.error(f"Save failed: {e}")
 
-# --- 5. QR GENERATOR (Sidebar) ---
-st.sidebar.title("Admin Tools")
-with st.sidebar.expander("Register / Generate QR"):
+# --- 5. ADMIN TOOLS ---
+st.sidebar.title("Admin")
+if st.sidebar.button("🔄 Force Data Refresh"):
+    st.cache_data.clear()
+    st.rerun()
+
+with st.sidebar.expander("Register / QR Generator"):
     new_id = st.text_input("New Rider ID")
-    if st.button("Create QR Code"):
-        # This link will be scanned by pump operators
+    if st.button("Create QR"):
         full_link = f"{APP_URL}?rider={new_id}"
         qr = qrcode.make(full_link)
         buf = io.BytesIO()
         qr.save(buf, format="PNG")
-        st.image(buf.getvalue(), caption=f"Permanent QR for {new_id}")
-        st.download_button("Download QR Image", buf.getvalue(), f"{new_id}_QR.png")
+        st.image(buf.getvalue())
+        st.download_button("Download QR", buf.getvalue(), f"{new_id}.png")
