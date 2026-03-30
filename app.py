@@ -25,7 +25,7 @@ def show_instructions():
         - 🚫 **লাল সংকেত:** রাইডার বর্তমানে লকড। স্ক্রিনে প্রদর্শিত সময় শেষ না হওয়া পর্যন্ত অপেক্ষা করতে হবে।
     4. **ডেটা সেভ:** প্রতিবার তেল দেওয়ার পর অবশ্যই **'Confirm & Save'** বাটনে ক্লিক করবেন।
 
-    *যেকোনো সমস্যায় অ্যাডমিনের সাথে যোগাযোগ করুন।*
+    *যেকোনো সমস্যায় অ্যাডমিনের সাথে যোগাযোগ করুন। এই অ্যাপ টি এখনও ডেভেলপমেন্ট এর মধ্যে আছে। ভুল ত্রুটি ক্ষমা সুন্দর দৃষ্টিতে দেখবেন। কোন উপদেশ থাকলে জানাবেন। @vpersonal1123@gmail.com*
     """)
     if st.button("ঠিক আছে, শুরু করি"):
         st.session_state.initialized = True
@@ -169,4 +169,10 @@ with st.sidebar.expander("📝 Register New Rider", expanded=False):
 # QR Generator
 with st.sidebar.expander("📥 Generate QR Code"):
     qr_input = st.text_input("Enter ID for QR")
-    if st.button
+    if st.button("Create QR"):
+        link = f"{APP_URL}?rider={qr_input}"
+        qr_img = qrcode.make(link)
+        buf = io.BytesIO()
+        qr_img.save(buf, format="PNG")
+        st.image(buf.getvalue())
+        st.download_button("Download PNG", buf.getvalue(), f"{qr_input}.png")
