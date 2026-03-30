@@ -7,17 +7,22 @@ import io
 import json
 
 # --- 1. CONFIGURATION ---
-st.set_page_config(page_title="FuelGuard 72h", page_icon="⛽")
+st.set_page_config(page_title="FuelGuard 72h", page_icon="⛽", layout="wide")
 LOCKOUT_HOURS = 72
-APP_URL = "https://fuel-tracker.streamlit.app" # Update this to your live URL
+APP_URL = "https://fuel-tracker.streamlit.app" # UPDATE THIS after deployment
 
-# --- 2. DATABASE CONNECTION ---
-@st.cache_data(ttl=10) # Cache only for 10 seconds to ensure freshness
+# --- 2. SECURE DATABASE CONNECTION ---
+@st.cache_data(ttl=5) # Refresh every 5 seconds to prevent data loss
 def fetch_data(_spread_obj):
-    df = _spread_obj.sheet_to_df(index=0)
-    df.columns = df.columns.str.strip() # Clean headers
-    return df
+    try:
+        data = _spread_obj.sheet_to_df(index=0)
+        data.columns = data.columns.str.strip() # Remove accidental spaces in headers
+        return data
+    except Exception as e:
+        st.error(f"Error reading sheet: {e}")
+        return pd.DataFrame(columns=["RiderID", "Name", "Last_Refill"])
 
+# Load Credentials
 if "gcp_service_account" in st.secrets:
     creds = dict(st.secrets["gcp_service_account"])
 else:
@@ -25,36 +30,41 @@ else:
         with open("credentials.json") as f:
             creds = json.load(f)
     except FileNotFoundError:
-        st.error("Credentials missing. Setup Streamlit Secrets.")
+        st.error("Credentials missing! Add them to Streamlit Secrets.")
         st.stop()
 
+# Initialize Connection
 try:
     spread = Spread("FuelTracker", config=creds)
-    # Load data
     df = fetch_data(spread)
 except Exception as e:
-    st.error(f"Google Sheets Error: {e}")
+    st.error(f"Connection Failed: {e}")
     st.stop()
 
-# --- 3. CORE LOGIC (Case-Insensitive) ---
+# --- 3. HELPER FUNCTIONS ---
+def clean_id(text):
+    """Removes spaces, hyphens, and converts to lowercase for perfect matching."""
+    return str(text).lower().replace(" ", "").replace("-", "").strip()
+
 def get_rider_status(rider_id, current_df):
-    search_id = str(rider_id).strip().lower()
-    temp_df = current_df.copy()
-    temp_df['match_id'] = temp_df['RiderID'].astype(str).str.strip().str.lower()
+    s_id = clean_id(rider_id)
+    # Create matching column on the fly
+    match_df = current_df.copy()
+    match_df['match_id'] = match_df['RiderID'].apply(clean_id)
     
-    rider_row = temp_df[temp_df['match_id'] == search_id]
+    rider_row = match_df[match_df['match_id'] == s_id]
     
     if rider_row.empty:
         return "NOT_FOUND", None, None
     
     name = rider_row.iloc[0]['Name']
-    last_refill_val = rider_row.iloc[0]['Last_Refill']
+    last_val = rider_row.iloc[0]['Last_Refill']
     
-    if pd.isna(last_refill_val) or str(last_refill_val).strip() == "":
+    if pd.isna(last_val) or str(last_val).strip() == "":
         return "ELIGIBLE", name, None
 
     try:
-        last_dt = datetime.strptime(str(last_refill_val), "%Y-%m-%d %H:%M:%S")
+        last_dt = datetime.strptime(str(last_val), "%Y-%m-%d %H:%M:%S")
         unlock_dt = last_dt + timedelta(hours=LOCKOUT_HOURS)
         if datetime.now() < unlock_dt:
             return "LOCKED", name, unlock_dt
@@ -62,59 +72,83 @@ def get_rider_status(rider_id, current_df):
     except:
         return "DATE_ERROR", name, None
 
-# --- 4. MAIN UI ---
-st.title("⛽ FuelGuard 72-Hour System")
+# --- 4. MAIN INTERFACE ---
+st.title("⛽ FuelGuard: 72-Hour Anti-Fraud System")
 
-# URL parameter support
+# Handle QR Scans via URL (?rider=ID)
 query_params = st.query_params
-scanned_id = query_params.get("rider", st.text_input("Enter/Scan Rider ID"))
+scanned_id = query_params.get("rider", st.text_input("🔍 Scan QR or Enter Vehicle ID"))
 
 if scanned_id:
     status, rider_name, unlock_time = get_rider_status(scanned_id, df)
     
     if status == "NOT_FOUND":
-        st.warning(f"ID '{scanned_id}' not found.")
+        st.warning(f"❌ ID '{scanned_id}' not found in database.")
+    elif status == "DATE_ERROR":
+        st.error(f"❗ Data Format Error in Sheet for {rider_name}.")
     else:
-        st.header(f"Rider: {rider_name}")
+        st.header(f"👤 Rider: {rider_name}")
         
         if status == "LOCKED":
-            st.error("### ❌ ACCESS DENIED")
+            st.error("### 🚫 REFILL DENIED")
             diff = unlock_time - datetime.now()
-            st.subheader(f"Wait: {diff.days}d {diff.seconds//3600}h remaining")
-            st.info(f"Available on: {unlock_time.strftime('%b %d, %I:%M %p')}")
+            st.subheader(f"Status: Wait {diff.days}d {diff.seconds//3600}h more")
+            st.info(f"Available: {unlock_time.strftime('%b %d, %I:%M %p')}")
         
         else:
-            st.success("### ✅ ELIGIBLE")
-            if st.button("Confirm & Save Refill"):
+            st.success("### ✅ ELIGIBLE FOR REFILL")
+            liters = st.number_input("Liters Issued", 1.0, 100.0, 5.0)
+            
+            if st.button("💾 Confirm & Save to Cloud"):
                 now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                s_id = clean_id(scanned_id)
                 
-                # Update the main dataframe
-                search_id = str(scanned_id).strip().lower()
-                mask = df['RiderID'].astype(str).str.strip().str.lower() == search_id
+                # Apply update to the original dataframe
+                mask = df['RiderID'].apply(clean_id) == s_id
                 df.loc[mask, 'Last_Refill'] = now_str
                 
-                # SAVE TO GOOGLE SHEETS
                 try:
                     spread.df_to_sheet(df, index=False, replace=True)
-                    st.cache_data.clear() # CLEAR CACHE IMMEDIATELY
-                    st.success("Record saved permanently to Google Sheets!")
+                    st.cache_data.clear() # Force app to re-read sheet
+                    st.success("Data synced to Google Sheets!")
                     st.balloons()
-                    st.rerun() # Refresh the page to show "LOCKED" status
+                    st.rerun() # Refresh to show locked status
                 except Exception as e:
-                    st.error(f"Save failed: {e}")
+                    st.error(f"Sync Failed: {e}")
 
-# --- 5. ADMIN TOOLS ---
-st.sidebar.title("Admin")
-if st.sidebar.button("🔄 Force Data Refresh"):
+# --- 5. SIDEBAR: REGISTRATION & ADMIN ---
+st.sidebar.title("⚙️ Administration")
+
+# Force Refresh Button
+if st.sidebar.button("🔄 Refresh Database"):
     st.cache_data.clear()
     st.rerun()
 
-with st.sidebar.expander("Register / QR Generator"):
-    new_id = st.text_input("New Rider ID")
+# Registration Form
+with st.sidebar.expander("📝 Register New Rider", expanded=False):
+    with st.form("reg_form"):
+        reg_id = st.text_input("Vehicle ID")
+        reg_name = st.text_input("Full Name")
+        submit = st.form_submit_button("Register & Save")
+        
+        if submit and reg_id and reg_name:
+            if clean_id(reg_id) in df['RiderID'].apply(clean_id).values:
+                st.error("This ID is already registered!")
+            else:
+                new_row = pd.DataFrame([{"RiderID": reg_id, "Name": reg_name, "Last_Refill": ""}])
+                updated_df = pd.concat([df, new_row], ignore_index=True)
+                spread.df_to_sheet(updated_df, index=False, replace=True)
+                st.cache_data.clear()
+                st.success("Registered!")
+                st.rerun()
+
+# QR Generator
+with st.sidebar.expander("📥 Generate QR Code"):
+    qr_input = st.text_input("Enter ID for QR")
     if st.button("Create QR"):
-        full_link = f"{APP_URL}?rider={new_id}"
-        qr = qrcode.make(full_link)
+        link = f"{APP_URL}?rider={qr_input}"
+        qr_img = qrcode.make(link)
         buf = io.BytesIO()
-        qr.save(buf, format="PNG")
+        qr_img.save(buf, format="PNG")
         st.image(buf.getvalue())
-        st.download_button("Download QR", buf.getvalue(), f"{new_id}.png")
+        st.download_button("Download PNG", buf.getvalue(), f"{qr_input}.png")
