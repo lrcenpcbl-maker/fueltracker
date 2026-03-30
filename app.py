@@ -11,12 +11,36 @@ st.set_page_config(page_title="FuelGuard 72h", page_icon="⛽", layout="wide")
 LOCKOUT_HOURS = 72
 APP_URL = "https://fuel-tracker.streamlit.app" # UPDATE THIS after deployment
 
-# --- 2. SECURE DATABASE CONNECTION ---
-@st.cache_data(ttl=5) # Refresh every 5 seconds to prevent data loss
+# --- 2. BANGLA INSTRUCTIONS DIALOG ---
+@st.dialog("ব্যবহার নির্দেশিকা (How to Use)")
+def show_instructions():
+    st.markdown("""
+    ### ⛽ ফুয়েলগার্ড (FuelGuard) এ স্বাগতম
+    এই অ্যাপটি জ্বালানি বণ্টন ব্যবস্থা স্বচ্ছ এবং নিরপেক্ষ রাখার জন্য তৈরি করা হয়েছে।
+    
+    **নিয়মাবলী:**
+    1. **৭২ ঘণ্টার নিয়ম:** একবার তেল নেওয়ার পর পরবর্তী **৭২ ঘণ্টা** পর্যন্ত ওই আইডি দিয়ে পুনরায় তেল নেওয়া যাবে না।
+    2. **কিউআর কোড স্ক্যান:** রাইডারের আইডি কার্ডের QR কোড স্ক্যান করুন অথবা ম্যানুয়ালি আইডি ইনপুট দিন।
+    3. **স্ট্যাটাস চেক:** - ✅ **সবুজ সংকেত:** রাইডার তেল পাওয়ার যোগ্য। লিটার ইনপুট দিয়ে 'Confirm' বাটনে চাপ দিন।
+        - 🚫 **লাল সংকেত:** রাইডার বর্তমানে লকড। স্ক্রিনে প্রদর্শিত সময় শেষ না হওয়া পর্যন্ত অপেক্ষা করতে হবে।
+    4. **ডেটা সেভ:** প্রতিবার তেল দেওয়ার পর অবশ্যই **'Confirm & Save'** বাটনে ক্লিক করবেন।
+
+    *যেকোনো সমস্যায় অ্যাডমিনের সাথে যোগাযোগ করুন।*
+    """)
+    if st.button("ঠিক আছে, শুরু করি"):
+        st.session_state.initialized = True
+        st.rerun()
+
+# Trigger instructions on first visit
+if "initialized" not in st.session_state:
+    show_instructions()
+
+# --- 3. SECURE DATABASE CONNECTION ---
+@st.cache_data(ttl=5)
 def fetch_data(_spread_obj):
     try:
         data = _spread_obj.sheet_to_df(index=0)
-        data.columns = data.columns.str.strip() # Remove accidental spaces in headers
+        data.columns = data.columns.str.strip()
         return data
     except Exception as e:
         st.error(f"Error reading sheet: {e}")
@@ -41,14 +65,12 @@ except Exception as e:
     st.error(f"Connection Failed: {e}")
     st.stop()
 
-# --- 3. HELPER FUNCTIONS ---
+# --- 4. HELPER FUNCTIONS ---
 def clean_id(text):
-    """Removes spaces, hyphens, and converts to lowercase for perfect matching."""
     return str(text).lower().replace(" ", "").replace("-", "").strip()
 
 def get_rider_status(rider_id, current_df):
     s_id = clean_id(rider_id)
-    # Create matching column on the fly
     match_df = current_df.copy()
     match_df['match_id'] = match_df['RiderID'].apply(clean_id)
     
@@ -72,7 +94,7 @@ def get_rider_status(rider_id, current_df):
     except:
         return "DATE_ERROR", name, None
 
-# --- 4. MAIN INTERFACE ---
+# --- 5. MAIN INTERFACE ---
 st.title("⛽ FuelGuard: 72-Hour Anti-Fraud System")
 
 # Handle QR Scans via URL (?rider=ID)
@@ -103,23 +125,25 @@ if scanned_id:
                 now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 s_id = clean_id(scanned_id)
                 
-                # Apply update to the original dataframe
                 mask = df['RiderID'].apply(clean_id) == s_id
                 df.loc[mask, 'Last_Refill'] = now_str
                 
                 try:
                     spread.df_to_sheet(df, index=False, replace=True)
-                    st.cache_data.clear() # Force app to re-read sheet
+                    st.cache_data.clear() 
                     st.success("Data synced to Google Sheets!")
                     st.balloons()
-                    st.rerun() # Refresh to show locked status
+                    st.rerun() 
                 except Exception as e:
                     st.error(f"Sync Failed: {e}")
 
-# --- 5. SIDEBAR: REGISTRATION & ADMIN ---
+# --- 6. SIDEBAR: REGISTRATION & ADMIN ---
 st.sidebar.title("⚙️ Administration")
 
-# Force Refresh Button
+# Instructions button in sidebar for manual access
+if st.sidebar.button("❓ নির্দেশিকা (Instructions)"):
+    show_instructions()
+
 if st.sidebar.button("🔄 Refresh Database"):
     st.cache_data.clear()
     st.rerun()
@@ -145,10 +169,4 @@ with st.sidebar.expander("📝 Register New Rider", expanded=False):
 # QR Generator
 with st.sidebar.expander("📥 Generate QR Code"):
     qr_input = st.text_input("Enter ID for QR")
-    if st.button("Create QR"):
-        link = f"{APP_URL}?rider={qr_input}"
-        qr_img = qrcode.make(link)
-        buf = io.BytesIO()
-        qr_img.save(buf, format="PNG")
-        st.image(buf.getvalue())
-        st.download_button("Download PNG", buf.getvalue(), f"{qr_input}.png")
+    if st.button
