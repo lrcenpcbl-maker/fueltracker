@@ -5,12 +5,12 @@ from datetime import datetime, timedelta
 import qrcode
 from PIL import Image
 import io
-import json
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="FuelGuard Pro", page_icon="⛽", layout="wide")
 LOCKOUT_HOURS = 72
-APP_URL = "https://fuel-tracker.streamlit.app" # আপনার আসল অ্যাপ লিঙ্কটি এখানে দিন
+# আপনার আসল অ্যাপ লিঙ্কটি এখানে দিন
+APP_URL = "https://fuel-tracker.streamlit.app" 
 
 # বাংলাদেশের ৬৪টি জেলার তালিকা
 BD_DISTRICTS = [
@@ -92,7 +92,11 @@ st.title("⛽ FuelGuard Pro: স্মার্ট ফুয়েল মনি�
 
 # হ্যান্ডেল কিউআর স্ক্যান (URL ?rider=ID)
 query_params = st.query_params
-scanned_id = query_params.get("rider", st.text_input("🔍 রাইডার আইডি লিখুন বা কিউআর স্ক্যান করুন", placeholder="যেমন: pabna ha 11 0101"))
+scanned_id = query_params.get("rider", "")
+
+# যদি URL-এ আইডি না থাকে তবে ইনপুট বক্স দেখাবে
+if not scanned_id:
+    scanned_id = st.text_input("🔍 রাইডার আইডি লিখুন বা কিউআর স্ক্যান করুন", placeholder="যেমন: pabna ha 11 0101")
 
 if scanned_id:
     s_id = clean_id(scanned_id)
@@ -102,9 +106,10 @@ if scanned_id:
     if rider_row.empty:
         st.warning(f"❌ আইডি '{scanned_id}' পাওয়া যায়নি।")
     else:
-        rider_name = rider_row.iloc[0]['Name']
-        last_val = rider_row.iloc[0]['Last_Refill']
-        actual_id = rider_row.iloc[0]['RiderID']
+        r_data = rider_row.iloc[0]
+        rider_name = r_data['Name']
+        last_val = r_data['Last_Refill']
+        actual_id = r_data['RiderID']
         
         st.header(f"👤 রাইডার: {rider_name} ({actual_id})")
 
@@ -178,21 +183,18 @@ with st.sidebar.expander("📝 নতুন রাইডার রেজিস�
             else:
                 st.warning("সবগুলো ঘর পূরণ করুন।")
 
-# কিউআর কোড জেনারেটর (Fix)
+# কিউআর কোড জেনারেটর
 with st.sidebar.expander("📥 কিউআর কোড তৈরি"):
     qr_input = st.text_input("আইডি লিখুন (QR এর জন্য)")
     if st.button("QR তৈরি করুন"):
         if qr_input:
-            # সঠিক লিঙ্ক তৈরি
             qr_link = f"{APP_URL}?rider={qr_input.upper().replace(' ', '%20')}"
             
-            # QR ইমেজ জেনারেট
             qr = qrcode.QRCode(version=1, box_size=10, border=5)
             qr.add_data(qr_link)
             qr.make(fit=True)
             img = qr.make_image(fill_color="black", back_color="white")
             
-            # মেমোরিতে ছবি সেভ (ডাউনলোডের জন্য)
             buf = io.BytesIO()
             img.save(buf, format="PNG")
             byte_im = buf.getvalue()
@@ -214,11 +216,13 @@ try:
     df_rep = df.copy()
     df_rep['Last_Refill'] = pd.to_datetime(df_rep['Last_Refill'], errors='coerce')
     today_df = df_rep[df_rep['Last_Refill'].dt.date == datetime.now().date()]
-    st.sidebar.metric("আজকের মোট
- রিফিল", len(today_df))
-    st.sidebar.metric("মোট লিটার বিতরণ", f"{today_df['Liters'].astype(float).sum()} L")
-except:
-    pass
+    
+    st.sidebar.metric("আজকের মোট রিফিল", len(today_df))
+    # Liters কলামকে নিউমেরিক ফর্মে কনভার্ট করে যোগফল বের করা
+    total_liters = pd.to_numeric(today_df['Liters'], errors='coerce').sum()
+    st.sidebar.metric("মোট লিটার বিতরণ", f"{total_liters} L")
+except Exception as e:
+    st.sidebar.write("রিপোর্ট লোড করা যাচ্ছে না।")
 
 if st.sidebar.button("🔄 ডাটা রিফ্রেশ করুন"):
     st.cache_data.clear()
