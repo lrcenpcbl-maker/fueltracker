@@ -214,8 +214,7 @@ try:
     df_rep = df.copy()
     df_rep['Last_Refill'] = pd.to_datetime(df_rep['Last_Refill'], errors='coerce')
     today_df = df_rep[df_rep['Last_Refill'].dt.date == datetime.now().date()]
-    st.sidebar.metric("আজকের মোট
- রিফিল", len(today_df))
+    st.sidebar.metric("আজকের মোট রিফিল", len(today_df))
     st.sidebar.metric("মোট লিটার বিতরণ", f"{today_df['Liters'].astype(float).sum()} L")
 except:
     pass
