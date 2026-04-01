@@ -210,7 +210,7 @@ if st.session_state.station_info:
             img.save(buf, format="PNG")
             st.image(buf.getvalue())    4. "**নিয়ম:** একবার তেল নিলে পরবর্তী **৭২ ঘণ্টা** ওই আইডি লক থাকবে।"
 
-    **বিঃদ্রঃ** ভুল পিন দিলে বা ছবি না তুললে ডাটা সেভ হবে না।
+   " **বিঃদ্রঃ** ভুল পিন দিলে বা ছবি না তুললে ডাটা সেভ হবে না।"
     """)
     if st.button("বুঝেছি, শুরু করি"):
         st.session_state.show_guide = False
