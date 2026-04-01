@@ -359,7 +359,7 @@ with st.sidebar.expander("📥 QR Code"):
         img.save(buf, format="PNG")
 
         st.image(buf.getvalue())
-⚠️ ভুল পিন বা ছবি ছাড়া ডাটা সেভ হবে না
+ভুল পিন বা ছবি ছাড়া ডাটা সেভ হবে না
 """
 
 @st.dialog("ব্যবহার নির্দেশিকা")
