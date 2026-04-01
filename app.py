@@ -8,33 +8,247 @@ import random
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="FuelGuard Pro", page_icon="⛽", layout="wide")
+
 LOCKOUT_HOURS = 72
 APP_URL = "https://fuel-tracker.streamlit.app"
 
 BD_DISTRICTS = [
-    "BAGERHAT", "BANDARBAN", "BARGUNA", "BARISHAL", "BHOLA", "BOGURA", "BRAHMANBARIA", 
-    "CHANDPUR", "CHATTOGRAM", "CHATTOGRAM METRO", "CHUADANGA", "COMILLA", "COXS BAZAR", 
-    "DHAKA", "DHAKA METRO", "DINAJPUR", "FARIDPUR", "FENI", "GAIBANDHA", "GAZIPUR", 
-    "GOPALGANJ", "HABIGANJ", "JAMALPUR", "JASHORE", "JHALOKATHI", "JHENAIDAH", 
-    "JOYPURHAT", "KHAGRACHHARI", "KHULNA", "KHULNA METRO", "KISHOREGANJ", "KURIGRAM", 
-    "KUSHTIA", "LAKSHMIPUR", "LALMONIRHAT", "MADARIPUR", "MAGURA", "MANIKGANJ", 
-    "MEHERPUR", "MOULVIBAZAR", "MUNSHIGANJ", "MYMENSINGH", "NAOGAON", "NARAIL", 
-    "NARAYANGANJ", "NARSINGDI", "NATORE", "NETROKONA", "NILPHAMARI", "NOAKHALI", 
-    "PABNA", "PANCHAGARH", "PATUAKHALI", "PIROJPUR", "RAJBARI", "RAJSHAHI", 
-    "RAJSHAHI METRO", "RANGAMATI", "RANGPUR", "SATKHIRA", "SHARIATPUR", "SHERPUR", 
-    "SIRAJGANJ", "SUNAMGANJ", "SYLHET", "SYLHET METRO", "TANGAIL", "THAKURGAON"
+    "BAGERHAT","BANDARBAN","BARGUNA","BARISHAL","BHOLA","BOGURA","BRAHMANBARIA",
+    "CHANDPUR","CHATTOGRAM","CHATTOGRAM METRO","CHUADANGA","COMILLA","COXS BAZAR",
+    "DHAKA","DHAKA METRO","DINAJPUR","FARIDPUR","FENI","GAIBANDHA","GAZIPUR",
+    "GOPALGANJ","HABIGANJ","JAMALPUR","JASHORE","JHALOKATHI","JHENAIDAH",
+    "JOYPURHAT","KHAGRACHHARI","KHULNA","KHULNA METRO","KISHOREGANJ","KURIGRAM",
+    "KUSHTIA","LAKSHMIPUR","LALMONIRHAT","MADARIPUR","MAGURA","MANIKGANJ",
+    "MEHERPUR","MOULVIBAZAR","MUNSHIGANJ","MYMENSINGH","NAOGAON","NARAIL",
+    "NARAYANGANJ","NARSINGDI","NATORE","NETROKONA","NILPHAMARI","NOAKHALI",
+    "PABNA","PANCHAGARH","PATUAKHALI","PIROJPUR","RAJBARI","RAJSHAHI",
+    "RAJSHAHI METRO","RANGAMATI","RANGPUR","SATKHIRA","SHARIATPUR","SHERPUR",
+    "SIRAJGANJ","SUNAMGANJ","SYLHET","SYLHET METRO","TANGAIL","THAKURGAON"
 ]
 
-# --- 2. USAGE GUIDE POP-UP ---
-# টেক্সটটি আলাদা ভেরিয়েবলে রাখা হয়েছে যাতে কোডের সাথে না মিশে
+# --- 2. GUIDE POPUP ---
 GUIDE_TEXT = """
 ### ⛽ এই অ্যাপটি কীভাবে কাজ করে?
-1. **রাইডার:** আইডি সার্চ করে নিজের এলিজিবিলিটি চেক করতে পারবেন.
-2. **পাম্প:** তেল দিতে হলে অবশ্যই স্টেশন আইডি ও পিন দিয়ে লগইন করতে হবে.
-3. **নিরাপত্তা:** তেল দেওয়ার সময় গাড়ির ছবি তোলা এবং তেলের ধরন সিলেক্ট করা বাধ্যতামূলক.
-4. **নিয়ম:** একবার তেল নিলে পরবর্তী **৭২ ঘণ্টা** ওই আইডি লক থাকবে.
 
-**বিঃদ্রঃ** ভুল পিন দিলে বা ছবি না তুললে ডাটা সেভ হবে না.
+1️⃣ **রাইডার:** আইডি সার্চ করে নিজের এলিজিবিলিটি চেক করতে পারবেন  
+2️⃣ **পাম্প:** তেল দিতে হলে স্টেশন আইডি ও পিন দিয়ে লগইন করতে হবে  
+3️⃣ **নিরাপত্তা:** ছবি তোলা বাধ্যতামূলক  
+4️⃣ **নিয়ম:** একবার তেল নিলে **৭২ ঘণ্টা** লক থাকবে  
+
+**বিঃদ্রঃ** ভুল পিন বা ছবি ছাড়া ডাটা সেভ হবে না
+"""
+
+@st.dialog("ব্যবহার নির্দেশিকা")
+def show_guide():
+    st.markdown(GUIDE_TEXT)
+    if st.button("বুঝেছি"):
+        st.session_state.show_guide = False
+        st.rerun()
+
+if "show_guide" not in st.session_state:
+    st.session_state.show_guide = True
+
+if st.session_state.show_guide:
+    show_guide()
+
+# --- 3. DATABASE ---
+@st.cache_data(ttl=5)
+def fetch_data(spread, sheet):
+    try:
+        return spread.sheet_to_df(sheet=sheet, index=0)
+    except:
+        return pd.DataFrame()
+
+if "gcp_service_account" not in st.secrets:
+    st.error("Missing Google credentials")
+    st.stop()
+
+spread = Spread("FuelTracker", config=dict(st.secrets["gcp_service_account"]))
+
+df_riders = fetch_data(spread, "Riders")
+df_stations = fetch_data(spread, "Stations")
+
+# --- 4. SESSION ---
+if "pump_logged_in" not in st.session_state:
+    st.session_state.pump_logged_in = False
+    st.session_state.station_info = None
+
+def clean_id(x):
+    return str(x).lower().replace(" ", "").replace("-", "")
+
+# --- 5. LOGIN ---
+if not st.session_state.pump_logged_in:
+
+    st.title("⛽ Pump Login")
+
+    tab1, tab2 = st.tabs(["Login", "Register Station"])
+
+    with tab1:
+
+        sid = st.text_input("Station ID")
+        pin = st.text_input("PIN", type="password")
+
+        if st.button("Login"):
+
+            match = df_stations[
+                (df_stations["StationID"] == sid.upper()) &
+                (df_stations["PIN"] == str(pin))
+            ]
+
+            if not match.empty:
+
+                st.session_state.pump_logged_in = True
+                st.session_state.station_info = match.iloc[0].to_dict()
+                st.rerun()
+
+            else:
+                st.error("Invalid ID or PIN")
+
+    with tab2:
+
+        with st.form("reg_station"):
+
+            name = st.text_input("Station Name")
+            loc = st.selectbox("District", BD_DISTRICTS)
+
+            if st.form_submit_button("Register"):
+
+                new_id = f"PUMP-{len(df_stations)+101}"
+                new_pin = str(random.randint(1000,9999))
+
+                new_row = pd.DataFrame([{
+                    "StationID": new_id,
+                    "StationName": name,
+                    "Location": loc,
+                    "PIN": new_pin
+                }])
+
+                spread.df_to_sheet(
+                    pd.concat([df_stations, new_row]),
+                    sheet="Stations",
+                    index=False,
+                    replace=True
+                )
+
+                st.success(f"ID: {new_id} PIN: {new_pin}")
+
+    st.stop()
+
+# --- 6. MAIN ---
+st.title("⛽ FuelGuard Pro")
+
+station = st.session_state.station_info
+
+st.sidebar.title(station["StationName"])
+
+if st.sidebar.button("Logout"):
+    st.session_state.pump_logged_in = False
+    st.rerun()
+
+search_id = st.text_input(
+    "Rider ID",
+    value=st.query_params.get("rider","")
+)
+
+if search_id:
+
+    mask = df_riders["RiderID"].apply(clean_id) == clean_id(search_id)
+
+    if mask.sum()==0:
+        st.warning("Not registered")
+
+    else:
+
+        rider = df_riders[mask].iloc[0]
+
+        st.subheader(rider["Name"])
+
+        eligible = True
+
+        if rider["Last_Refill"]!="":
+
+            last = datetime.strptime(
+                rider["Last_Refill"],
+                "%Y-%m-%d %H:%M:%S"
+            )
+
+            unlock = last + timedelta(hours=LOCKOUT_HOURS)
+
+            if datetime.now() < unlock:
+
+                eligible=False
+                st.error(f"Locked until {unlock}")
+
+        if eligible:
+
+            st.success("Eligible")
+
+            fuel = st.selectbox(
+                "Fuel",
+                ["Octane","Petrol","Diesel"]
+            )
+
+            liters = st.number_input(
+                "Liters",
+                1.0,
+                100.0,
+                5.0
+            )
+
+            photo = st.camera_input("Photo")
+
+            if st.button("Confirm"):
+
+                if photo:
+
+                    now = datetime.now().strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+
+                    df_riders.loc[mask,"Last_Refill"]=now
+
+                    spread.df_to_sheet(
+                        df_riders,
+                        sheet="Riders",
+                        index=False,
+                        replace=True
+                    )
+
+                    log = pd.DataFrame([{
+                        "Timestamp":now,
+                        "StationID":station["StationID"],
+                        "RiderID":rider["RiderID"],
+                        "Fuel":fuel,
+                        "Liters":liters
+                    }])
+
+                    spread.df_to_sheet(
+                        log,
+                        sheet="Transactions",
+                        index=False,
+                        append=True
+                    )
+
+                    st.success("Saved")
+
+# --- 7. QR ---
+with st.sidebar:
+
+    st.subheader("QR")
+
+    rid = st.text_input("Rider ID")
+
+    if st.button("Generate QR"):
+
+        url = f"{APP_URL}?rider={rid}"
+
+        img = qrcode.make(url)
+
+        buf = io.BytesIO()
+
+        img.save(buf)
+
+        st.image(buf.getvalue())**বিঃদ্রঃ** ভুল পিন দিলে বা ছবি না তুললে ডাটা সেভ হবে না.
 """
 
 @st.dialog("ব্যবহার নির্দেশিকা (User Guide)")
