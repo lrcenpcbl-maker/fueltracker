@@ -3,13 +3,14 @@ from gspread_pandas import Spread
 import pandas as pd
 from datetime import datetime, timedelta
 import qrcode
+from PIL import Image
 import io
 import json
 
 # --- 1. CONFIGURATION ---
 st.set_page_config(page_title="FuelGuard Pro", page_icon="⛽", layout="wide")
 LOCKOUT_HOURS = 72
-APP_URL = "https://fuel-tracker.streamlit.app" 
+APP_URL = "https://fuel-tracker.streamlit.app" # আপনার আসল অ্যাপ লিঙ্কটি এখানে দিন
 
 # বাংলাদেশের ৬৪টি জেলার তালিকা
 BD_DISTRICTS = [
@@ -26,7 +27,7 @@ BD_DISTRICTS = [
     "SIRAJGANJ", "SUNAMGANJ", "SYLHET", "SYLHET METRO", "TANGAIL", "THAKURGAON"
 ]
 
-# --- 2. BANGLA INSTRUCTIONS DIALOG (আপডেটেড) ---
+# --- 2. BANGLA INSTRUCTIONS DIALOG ---
 @st.dialog("ব্যবহার নির্দেশিকা (How to Use)")
 def show_instructions():
     st.markdown("""
@@ -41,9 +42,9 @@ def show_instructions():
     4. **ডেটা সেভ:** প্রতিবার তেল দেওয়ার পর অবশ্যই **'Confirm & Save'** বাটনে ক্লিক করবেন।
 
     **নতুন ফিচারসমূহ:**
-    - 📸 **ছবি ভেরিফিকেশন:** তেল দেওয়ার সময় নিরাপত্তার জন্য গাড়ির ছবি তোলা বাধ্যতামূলক।
-    - ☁️ **সেন্ট্রাল ডাটাবেজ:** যেকোনো পাম্প থেকে তেল নিলেই এই সিস্টেম আপডেট হবে।
-    - 📊 **লাইভ রিপোর্ট:** অ্যাডমিন প্যানেলে আজকের মোট রিফিলের হিসাব দেখা যাবে।
+    1. **ছবি ভেরিফিকেশন:** তেল দেওয়ার সময় নিরাপত্তার জন্য গাড়ির ছবি তোলা বাধ্যতামূলক।
+    2. **সেন্ট্রাল ডাটাবেজ:** যেকোনো পাম্প থেকে তেল নিলেই এই সিস্টেম আপডেট হবে।
+    3. **লাইভ রিপোর্ট:** অ্যাডমিন প্যানেলে আজকের মোট রিফিলের হিসাব দেখা যাবে।
 
     *যেকোনো সমস্যায় অ্যাডমিনের সাথে যোগাযোগ করুন: **vpersonal1123@gmail.com***
     """)
@@ -68,7 +69,7 @@ def fetch_data(_spread_obj):
     except Exception:
         return pd.DataFrame(columns=["RiderID", "Name", "Last_Refill", "Liters"])
 
-# Load Credentials
+# Load Credentials (Streamlit Secrets)
 if "gcp_service_account" in st.secrets:
     creds = dict(st.secrets["gcp_service_account"])
     try:
@@ -78,26 +79,28 @@ if "gcp_service_account" in st.secrets:
         st.error(f"Connection Failed: {e}")
         st.stop()
 else:
-    st.error("Credentials missing!")
+    st.error("Credentials missing in Streamlit Secrets!")
     st.stop()
 
-# --- 4. SMART HELPER FUNCTIONS ---
+# --- 4. HELPER FUNCTIONS ---
 def clean_id(text):
+    """আইডি থেকে স্পেস ও ড্যাশ সরিয়ে ছোট হাতের অক্ষরে রূপান্তর করে।"""
     return str(text).lower().replace(" ", "").replace("-", "").strip()
 
 # --- 5. MAIN INTERFACE ---
 st.title("⛽ FuelGuard Pro: স্মার্ট ফুয়েল মনিটরিং")
 
-search_input = st.text_input("🔍 রাইডার আইডি লিখুন বা কিউআর স্ক্যান করুন", 
-                            placeholder="যেমন: pabna ha 11 0101")
+# হ্যান্ডেল কিউআর স্ক্যান (URL ?rider=ID)
+query_params = st.query_params
+scanned_id = query_params.get("rider", st.text_input("🔍 রাইডার আইডি লিখুন বা কিউআর স্ক্যান করুন", placeholder="যেমন: pabna ha 11 0101"))
 
-if search_input:
-    s_id = clean_id(search_input)
+if scanned_id:
+    s_id = clean_id(scanned_id)
     mask = df['RiderID'].apply(clean_id) == s_id
     rider_row = df[mask]
 
     if rider_row.empty:
-        st.warning(f"❌ '{search_input}' আইডিটি ডাটাবেজে পাওয়া যায়নি।")
+        st.warning(f"❌ আইডি '{scanned_id}' পাওয়া যায়নি।")
     else:
         rider_name = rider_row.iloc[0]['Name']
         last_val = rider_row.iloc[0]['Last_Refill']
@@ -114,55 +117,108 @@ if search_input:
                 if datetime.now() < unlock_time:
                     eligible = False
             except:
-                st.error("তারিখের ফরম্যাটে সমস্যা।")
+                st.error("ডাটাবেজে তারিখের ফরম্যাটে সমস্যা আছে।")
 
         if not eligible:
             st.error(f"### 🚫 রিফিল রিজেক্ট (Locked)")
             diff = unlock_time - datetime.now()
-            st.subheader(f"অপেক্ষা: {diff.days} দিন {diff.seconds//3600} ঘণ্টা")
+            st.subheader(f"অপেক্ষা করুন: {diff.days} দিন {diff.seconds//3600} ঘণ্টা")
+            st.info(f"পরবর্তীতে পাওয়া যাবে: {unlock_time.strftime('%b %d, %I:%M %p')}")
+        
         else:
             st.success("### ✅ রিফিল অনুমোদিত")
             col1, col2 = st.columns(2)
             with col1:
-                liters = st.number_input("লিটারের পরিমাণ", 1.0, 100.0, 5.0)
-                confirm = st.button("💾 Confirm & Save to Cloud")
+                liters_to_issue = st.number_input("লিটারের পরিমাণ (Liters)", 1.0, 100.0, 5.0)
+                confirm_btn = st.button("💾 Confirm & Save to Cloud")
+            
             with col2:
                 photo = st.camera_input("নিরাপত্তার জন্য গাড়ির ছবি তুলুন")
             
-            if confirm:
-                if photo:
+            if confirm_btn:
+                if photo is not None:
                     now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     df.loc[mask, 'Last_Refill'] = now_str
-                    df.loc[mask, 'Liters'] = liters
-                    spread.df_to_sheet(df, index=False, replace=True)
-                    st.cache_data.clear() 
-                    st.success("সফলভাবে আপডেট হয়েছে!")
-                    st.balloons()
-                    st.rerun()
+                    df.loc[mask, 'Liters'] = liters_to_issue
+                    
+                    try:
+                        spread.df_to_sheet(df, index=False, replace=True)
+                        st.cache_data.clear() 
+                        st.success(f"✅ সফল! {rider_name}-কে {liters_to_issue} লিটার তেল দেওয়া হয়েছে।")
+                        st.balloons()
+                        st.rerun() 
+                    except Exception as e:
+                        st.error(f"Sync Failed: {e}")
                 else:
                     st.warning("⚠️ ছবি তোলা বাধ্যতামূলক।")
 
-# --- 6. SIDEBAR ---
+# --- 6. SIDEBAR: ADMIN, REGISTRATION & QR ---
 st.sidebar.title("⚙️ এডমিন প্যানেল")
-with st.sidebar.expander("📝 নতুন রাইডার রেজিস্ট্রেশন"):
-    with st.form("reg"):
-        d = st.selectbox("জেলা", sorted(BD_DISTRICTS))
-        s = st.selectbox("সিরিজ", ["KA", "KHA", "GA", "GHA", "CHA", "THA", "HA", "LA", "MA", "BA"])
-        n = st.text_input("নাম্বার (11-0101)")
-        name = st.text_input("নাম")
-        if st.form_submit_button("রেজিস্টার"):
-            final_id = f"{d}-{s}-{n}".upper()
-            new_row = pd.DataFrame([{"RiderID": final_id, "Name": name, "Last_Refill": "", "Liters": 0}])
-            spread.df_to_sheet(pd.concat([df, new_row]), index=False, replace=True)
-            st.cache_data.clear()
-            st.success("রেজিস্টার্ড হয়েছে!")
-            st.rerun()
 
+# নতুন রাইডার রেজিস্ট্রেশন (৬৪ জেলা ভিত্তিক)
+with st.sidebar.expander("📝 নতুন রাইডার রেজিস্ট্রেশন", expanded=False):
+    with st.form("reg_form"):
+        sel_dist = st.selectbox("জেলা/মেট্রো এরিয়া", sorted(BD_DISTRICTS))
+        sel_series = st.selectbox("গাড়ির শ্রেণী (Series)", ["KA", "KHA", "GA", "GHA", "CHA", "THA", "HA", "LA", "MA", "BA"])
+        sel_num = st.text_input("গাড়ির নাম্বার (যেমন: 11-0101)")
+        reg_name = st.text_input("রাইডারের পূর্ণ নাম")
+        
+        if st.form_submit_button("রেজিস্ট্রেশন সম্পন্ন করুন"):
+            if sel_num and reg_name:
+                final_id = f"{sel_dist}-{sel_series}-{sel_num}".upper()
+                if clean_id(final_id) in df['RiderID'].apply(clean_id).values:
+                    st.error("এই আইডি আগে থেকেই নিবন্ধিত!")
+                else:
+                    new_row = pd.DataFrame([{"RiderID": final_id, "Name": reg_name, "Last_Refill": "", "Liters": 0}])
+                    updated_df = pd.concat([df, new_row], ignore_index=True)
+                    spread.df_to_sheet(updated_df, index=False, replace=True)
+                    st.cache_data.clear()
+                    st.success(f"সফলভাবে নিবন্ধিত: {final_id}")
+                    st.rerun()
+            else:
+                st.warning("সবগুলো ঘর পূরণ করুন।")
+
+# কিউআর কোড জেনারেটর (Fix)
+with st.sidebar.expander("📥 কিউআর কোড তৈরি"):
+    qr_input = st.text_input("আইডি লিখুন (QR এর জন্য)")
+    if st.button("QR তৈরি করুন"):
+        if qr_input:
+            # সঠিক লিঙ্ক তৈরি
+            qr_link = f"{APP_URL}?rider={qr_input.upper().replace(' ', '%20')}"
+            
+            # QR ইমেজ জেনারেট
+            qr = qrcode.QRCode(version=1, box_size=10, border=5)
+            qr.add_data(qr_link)
+            qr.make(fit=True)
+            img = qr.make_image(fill_color="black", back_color="white")
+            
+            # মেমোরিতে ছবি সেভ (ডাউনলোডের জন্য)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            byte_im = buf.getvalue()
+            
+            st.image(byte_im, caption=f"QR for: {qr_input.upper()}")
+            st.download_button(
+                label="ডাউনলোড QR",
+                data=byte_im,
+                file_name=f"QR_{qr_input.upper()}.png",
+                mime="image/png"
+            )
+        else:
+            st.warning("আগে একটি আইডি লিখুন।")
+
+# ড্যাশবোর্ড রিপোর্ট
 st.sidebar.markdown("---")
 st.sidebar.subheader("📊 আজকের লাইভ রিপোর্ট")
 try:
-    df['Last_Refill_DT'] = pd.to_datetime(df['Last_Refill'], errors='coerce')
-    today_df = df[df['Last_Refill_DT'].dt.date == datetime.now().date()]
-    st.sidebar.metric("আজকের রিফিল", len(today_df))
-    st.sidebar.metric("মোট লিটার", f"{today_df['Liters'].astype(float).sum()} L")
-except: pass
+    df_rep = df.copy()
+    df_rep['Last_Refill'] = pd.to_datetime(df_rep['Last_Refill'], errors='coerce')
+    today_df = df_rep[df_rep['Last_Refill'].dt.date == datetime.now().date()]
+    st.sidebar.metric("আজকের মোট রিফিল", len(today_df))
+    st.sidebar.metric("মোট লিটার বিতরণ", f"{today_df['Liters'].astype(float).sum()} L")
+except:
+    pass
+
+if st.sidebar.button("🔄 ডাটা রিফ্রেশ করুন"):
+    st.cache_data.clear()
+    st.rerun()
