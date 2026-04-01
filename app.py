@@ -32,9 +32,333 @@ GUIDE_TEXT = """
 
 1️⃣ রাইডার আইডি দিয়ে এলিজিবিলিটি চেক করা যাবে  
 2️⃣ পাম্পকে অবশ্যই লগইন করতে হবে  
-3️⃣ তেল দেওয়ার সময় ছবি বাধ্যতামূলক  
+3️⃣ তেল দেওয়ার সময় গাড়ির ছবি বাধ্যতামূলক  
 4️⃣ একবার তেল নিলে ৭২ ঘণ্টা লক থাকবে  
 
+**বিঃদ্রঃ** ভুল পিন বা ছবি ছাড়া ডাটা সেভ হবে না
+"""
+
+@st.dialog("ব্যবহার নির্দেশিকা")
+def show_guide():
+    st.markdown(GUIDE_TEXT)
+
+    if st.button("বুঝেছি"):
+        st.session_state.show_guide = False
+        st.rerun()
+
+if "show_guide" not in st.session_state:
+    st.session_state.show_guide = True
+
+if st.session_state.show_guide:
+    show_guide()
+
+# ---------------- DATABASE ----------------
+@st.cache_data(ttl=10)
+def load_sheet(spread, sheet_name):
+    try:
+        return spread.sheet_to_df(sheet=sheet_name, index=0)
+    except:
+        return pd.DataFrame()
+
+if "gcp_service_account" not in st.secrets:
+    st.error("Google credentials missing in Streamlit secrets")
+    st.stop()
+
+spread = Spread(
+    "FuelTracker",
+    config=dict(st.secrets["gcp_service_account"])
+)
+
+df_riders = load_sheet(spread, "Riders")
+df_stations = load_sheet(spread, "Stations")
+
+# ensure columns exist
+if "Last_Refill" not in df_riders.columns:
+    df_riders["Last_Refill"] = ""
+
+# ---------------- SESSION ----------------
+if "pump_logged_in" not in st.session_state:
+    st.session_state.pump_logged_in = False
+    st.session_state.station_info = None
+
+def clean_id(text):
+    return str(text).lower().replace(" ", "").replace("-", "").strip()
+
+# ---------------- LOGIN PAGE ----------------
+if not st.session_state.pump_logged_in:
+
+    st.title("⛽ FuelGuard Pump Login")
+
+    tab_login, tab_register = st.tabs(["🔐 Login", "📝 Register Station"])
+
+    # ---------- LOGIN ----------
+    with tab_login:
+
+        station_id_input = st.text_input("Station ID")
+        station_pin_input = st.text_input("PIN", type="password")
+
+        if st.button("Login"):
+
+            if not df_stations.empty:
+
+                match = df_stations[
+                    (df_stations["StationID"] == station_id_input.upper()) &
+                    (df_stations["PIN"] == str(station_pin_input))
+                ]
+
+                if not match.empty:
+
+                    st.session_state.pump_logged_in = True
+                    st.session_state.station_info = match.iloc[0].to_dict()
+
+                    st.rerun()
+
+                else:
+
+                    st.error("Wrong ID or PIN")
+
+            else:
+
+                st.error("Stations sheet empty")
+
+        if st.button("Visitor Mode"):
+
+            st.session_state.pump_logged_in = True
+            st.session_state.station_info = None
+
+            st.rerun()
+
+    # ---------- REGISTER ----------
+    with tab_register:
+
+        with st.form("register_station"):
+
+            pump_name = st.text_input("Pump Name")
+
+            district = st.selectbox("District", BD_DISTRICTS)
+
+            submitted = st.form_submit_button("Register")
+
+            if submitted and pump_name:
+
+                new_id = f"PUMP-{len(df_stations)+101}"
+
+                new_pin = str(random.randint(1000,9999))
+
+                new_station = pd.DataFrame([{
+                    "StationID": new_id,
+                    "StationName": pump_name,
+                    "Location": district,
+                    "PIN": new_pin
+                }])
+
+                spread.df_to_sheet(
+                    pd.concat([df_stations,new_station]),
+                    sheet="Stations",
+                    index=False,
+                    replace=True
+                )
+
+                st.success(f"ID: {new_id} | PIN: {new_pin}")
+
+                st.cache_data.clear()
+
+    st.stop()
+
+# ---------------- SIDEBAR ----------------
+station = st.session_state.station_info
+
+st.sidebar.title(
+    station["StationName"] if station else "Visitor Mode"
+)
+
+if st.sidebar.button("Logout"):
+
+    st.session_state.pump_logged_in = False
+    st.session_state.station_info = None
+
+    st.rerun()
+
+# ---------------- SEARCH RIDER ----------------
+st.title("⛽ FuelGuard Pro")
+
+search_id = st.text_input(
+    "🔍 Rider ID",
+    value=st.query_params.get("rider","")
+)
+
+if search_id:
+
+    mask = df_riders["RiderID"].apply(clean_id) == clean_id(search_id)
+
+    rider_row = df_riders[mask]
+
+    if rider_row.empty:
+
+        st.warning("❌ Rider not registered")
+
+    else:
+
+        rider = rider_row.iloc[0]
+
+        st.subheader(f"👤 {rider['Name']}")
+
+        eligible = True
+
+        if rider["Last_Refill"] != "":
+
+            try:
+
+                last_time = datetime.strptime(
+                    rider["Last_Refill"],
+                    "%Y-%m-%d %H:%M:%S"
+                )
+
+                unlock_time = last_time + timedelta(hours=LOCKOUT_HOURS)
+
+                if datetime.now() < unlock_time:
+
+                    eligible = False
+
+                    st.error(
+                        f"🚫 Locked until {unlock_time.strftime('%d %b %I:%M %p')}"
+                    )
+
+            except:
+                pass
+
+        if eligible:
+
+            st.success("✅ Eligible for fuel")
+
+            if station:
+
+                fuel_type = st.selectbox(
+                    "Fuel Type",
+                    ["Octane","Petrol","Diesel"]
+                )
+
+                liters = st.number_input(
+                    "Liters",
+                    1.0,
+                    100.0,
+                    5.0
+                )
+
+                photo = st.camera_input(
+                    "Take vehicle photo"
+                )
+
+                if st.button("Confirm Fuel"):
+
+                    if photo is not None:
+
+                        now_str = datetime.now().strftime(
+                            "%Y-%m-%d %H:%M:%S"
+                        )
+
+                        df_riders.loc[mask,"Last_Refill"] = now_str
+
+                        spread.df_to_sheet(
+                            df_riders,
+                            sheet="Riders",
+                            index=False,
+                            replace=True
+                        )
+
+                        transaction = pd.DataFrame([{
+
+                            "Timestamp": now_str,
+
+                            "StationID": station["StationID"],
+
+                            "StationName": station["StationName"],
+
+                            "RiderID": rider["RiderID"],
+
+                            "FuelType": fuel_type,
+
+                            "Liters": liters
+
+                        }])
+
+                        spread.df_to_sheet(
+                            transaction,
+                            sheet="Transactions",
+                            index=False,
+                            append=True
+                        )
+
+                        st.success("Saved successfully")
+
+                        st.cache_data.clear()
+
+                        st.rerun()
+
+                    else:
+
+                        st.error("Photo required")
+
+# ---------------- ADD RIDER ----------------
+if station:
+
+    with st.sidebar.expander("➕ Register Rider"):
+
+        with st.form("add_rider"):
+
+            district = st.selectbox("District", BD_DISTRICTS)
+
+            series = st.selectbox("Series", ["KA","KHA","GA","GHA","HA","LA"])
+
+            number = st.text_input("Vehicle Number")
+
+            name = st.text_input("Rider Name")
+
+            submitted = st.form_submit_button("Save")
+
+            if submitted and number and name:
+
+                rider_id = f"{district}-{series}-{number}".upper()
+
+                new_rider = pd.DataFrame([{
+
+                    "RiderID": rider_id,
+
+                    "Name": name,
+
+                    "Last_Refill": ""
+
+                }])
+
+                spread.df_to_sheet(
+                    pd.concat([df_riders,new_rider]),
+                    sheet="Riders",
+                    index=False,
+                    replace=True
+                )
+
+                st.success("Rider added")
+
+                st.cache_data.clear()
+
+                st.rerun()
+
+# ---------------- QR CODE ----------------
+with st.sidebar.expander("📥 QR Code"):
+
+    qr_id = st.text_input("Rider ID for QR")
+
+    if st.button("Generate QR"):
+
+        qr_link = f"{APP_URL}?rider={qr_id.upper()}"
+
+        img = qrcode.make(qr_link)
+
+        buf = io.BytesIO()
+
+        img.save(buf, format="PNG")
+
+        st.image(buf.getvalue())
 ⚠️ ভুল পিন বা ছবি ছাড়া ডাটা সেভ হবে না
 """
 
