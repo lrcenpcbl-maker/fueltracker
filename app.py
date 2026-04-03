@@ -19,24 +19,19 @@ except:
 BD_DISTRICTS = ["BAGERHAT", "BANDARBAN", "BARGUNA", "BARISHAL", "BHOLA", "BOGURA", "BRAHMANBARIA", "CHANDPUR", "CHATTOGRAM", "CHATTOGRAM METRO", "CHUADANGA", "COMILLA", "COXS BAZAR", "DHAKA", "DHAKA METRO", "DINAJPUR", "FARIDPUR", "FENI", "GAIBANDHA", "GAZIPUR", "GOPALGANJ", "HABIGANJ", "JAMALPUR", "JASHORE", "JHALOKATHI", "JHENAIDAH", "JOYPURHAT", "KHAGRACHHARI", "KHULNA", "KHULNA METRO", "KISHOREGANJ", "KURIGRAM", "KUSHTIA", "LAKSHMIPUR", "LALMONIRHAT", "MADARIPUR", "MAGURA", "MANIKGANJ", "MEHERPUR", "MOULVIBAZAR", "MUNSHIGANJ", "MYMENSINGH", "NAOGAON", "NARAIL", "NARAYANGANJ", "NARSINGDI", "NATORE", "NETROKONA", "NILPHAMARI", "NOAKHALI", "PABNA", "PANCHAGARH", "PATUAKHALI", "PIROJPUR", "RAJBARI", "RAJSHAHI", "RAJSHAHI METRO", "RANGAMATI", "RANGPUR", "SATKHIRA", "SHARIATPUR", "SHERPUR", "SIRAJGANJ", "SUNAMGANJ", "SYLHET", "SYLHET METRO", "TANGAIL", "THAKURGAON"]
 SERIES_LIST = ["KA", "KHA", "GA", "GHA", "CHA", "THA", "HA", "LA", "MA", "BA"]
 
-# --- ২. পপ-আপ নির্দেশিকা (Pop-up Instruction) ---
-@st.dialog("📖 ফুয়েলগার্ড ইউজার গাইড ও আপডেট")
+# --- ২. পপ-আপ নির্দেশিকা ---
+@st.dialog("📖 ফুয়েলগার্ড ইউজার গাইড")
 def show_instruction_popup():
     st.markdown("""
-    ### ⛽ FuelGuard Pro এ আপনাকে স্বাগতম!
-    সিস্টেমের নিরাপত্তা ও সহজলভ্যতা নিশ্চিতে কিছু পরিবর্তন আনা হয়েছে:
+    ### ⛽ FuelGuard Pro এ স্বাগতম!
+    
+    #### 🆕 আপডেট ও পরিবর্তনসমূহ:
+    1. **উন্মুক্ত রেজিস্ট্রেশন:** এখন যেকোনো রাইডার নিজে আইডি তৈরি করতে পারবেন।
+    2. **পিন প্রটেক্টড ইনপুট:** ডাটা সেভ করতে পাম্প অপারেটরের পিন প্রয়োজন।
+    3. **ঐচ্ছিক ছবি:** এখন থেকে গাড়ির ছবি তোলা বাধ্যতামূলক নয়, তবে নিরাপত্তার জন্য ছবি তুলে রাখা ভালো।
 
-    ---
-    #### 🆕 নতুন পরিবর্তনসমূহ (Key Changes):
-    1. **উন্মুক্ত রেজিস্ট্রেশন:** এখন যেকোনো রাইডার নিজে **'নতুন রেজিস্ট্রেশন'** ট্যাব থেকে আইডি তৈরি করতে পারবেন। কোনো পিন লাগবে না।
-    2. **পিন প্রটেক্টড ইনপুট:** তেল দেওয়ার রেকর্ড সেভ করতে শুধুমাত্র পাম্প অপারেটরের **গোপন পিন** প্রয়োজন।
-    3. **স্মার্ট ভেরিফিকেশন:** এখন আইডি চেক করা সবার জন্য উন্মুক্ত।
-
-    ---
-    #### 🛠 ব্যবহারবিধি (Pros & Usage):
-    * **রাইডার:** রেজিস্ট্রেশন ট্যাব থেকে আইডি তৈরি করুন। কিউআর কোড ডাউনলোড করে সাথে রাখুন।
-    * **অপারেটর:** রাইডার এলিজিবল হলে পিন দিয়ে লগার আনলক করুন এবং গাড়ির ছবি তুলে কনফার্ম করুন।
-    * **নিরাপত্তা:** প্রতিটি ট্রানজ্যাকশনে ছবি বাধ্যতামূলক করা হয়েছে যা জালিয়াতি রোধ করবে।
+    #### 🛠 ব্যবহারবিধি:
+    * **অপারেটর:** রাইডার এলিজিবল হলে পিন দিয়ে লগার আনলক করুন এবং লিটার লিখে **Confirm & Save** করুন।
     """)
     if st.button("ঠিক আছে, শুরু করি"):
         st.session_state.show_manual = False
@@ -71,7 +66,7 @@ else:
 def clean_id(text):
     return str(text).lower().replace(" ", "").replace("-", "").strip()
 
-# --- ৪. মেইন ইন্টারফেস (ট্যাব সিস্টেম) ---
+# --- ৪. মেইন ইন্টারফেস ---
 st.title("⛽ FuelGuard Pro")
 tab1, tab2, tab3 = st.tabs(["🔍 স্ট্যাটাস ও রিফিল", "📝 নতুন রেজিস্ট্রেশন", "📊 রিপোর্ট"])
 
@@ -105,23 +100,29 @@ with tab1:
             else:
                 st.success("✅ রাইডার যোগ্য।")
                 with st.expander("🔓 অপারেটর প্যানেল (পিন দিন)"):
-                    op_pin = st.text_input("Operator PIN", type="password")
+                    op_pin = st.text_input("Operator PIN", type="password", key="op_pin_field")
                     if op_pin == OPERATOR_PIN:
                         c1, c2 = st.columns(2)
                         with c1:
-                            liters = st.number_input("লিটার", 1.0, 100.0, 5.0)
-                            confirm = st.button("💾 Save Transaction")
+                            liters = st.number_input("লিটার পরিমাণ", 1.0, 100.0, 5.0)
+                            confirm = st.button("💾 Confirm & Save")
                         with c2:
-                            photo = st.camera_input("গাড়ির ছবি")
+                            # ছবি তোলা এখন ঐচ্ছিক (Optional)
+                            photo = st.camera_input("গাড়ির ছবি (ঐচ্ছিক)")
                         
                         if confirm:
-                            if photo:
-                                df.loc[mask, 'Last_Refill'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                                df.loc[mask, 'Liters'] = liters
+                            # ছবি তোলা বাধ্যতামূলক নয়, তাই সরাসরি সেভ হবে
+                            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            df.loc[mask, 'Last_Refill'] = now_str
+                            df.loc[mask, 'Liters'] = liters
+                            try:
                                 spread.df_to_sheet(df, index=False, replace=True)
                                 st.cache_data.clear()
-                                st.success("আপডেট হয়েছে!"); st.balloons(); st.rerun()
-                            else: st.warning("ছবি তোলা বাধ্যতামূলক!")
+                                st.success("সাফল্যজনকভাবে ডাটা সেভ হয়েছে!")
+                                st.balloons()
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Sync error: {e}")
 
 with tab2:
     st.subheader("📝 নতুন রেজিস্ট্রেশন")
@@ -131,7 +132,7 @@ with tab2:
             dist = st.selectbox("জেলা", sorted(BD_DISTRICTS))
             series = st.selectbox("সিরিজ", SERIES_LIST)
         with col2:
-            num = st.text_input("নাম্বার (11-0101)")
+            num = st.text_input("নাম্বার (যেমন: 11-0101)")
             name = st.text_input("নাম")
         
         if st.form_submit_button("রেজিস্ট্রেশন সম্পন্ন করুন"):
@@ -144,22 +145,22 @@ with tab2:
                     updated_df = pd.concat([df, new_row], ignore_index=True)
                     spread.df_to_sheet(updated_df, index=False, replace=True)
                     st.cache_data.clear()
-                    st.success(f"নিবন্ধিত: {f_id}"); st.rerun()
+                    st.success(f"সফলভাবে নিবন্ধিত: {f_id}"); st.rerun()
 
 with tab3:
-    st.subheader("📊 আজকের বণ্টন")
+    st.subheader("📊 আজকের রিপোর্ট")
     try:
         df_rep = df.copy()
         df_rep['Last_Refill'] = pd.to_datetime(df_rep['Last_Refill'], errors='coerce')
         today_data = df_rep[df_rep['Last_Refill'].dt.date == datetime.now().date()]
-        st.metric("আজকের বাইক", len(today_data))
+        st.metric("আজকের মোট বাইক", len(today_data))
         st.dataframe(today_data[['RiderID', 'Name', 'Liters', 'Last_Refill']], use_container_width=True)
-    except: st.write("ডাটা নেই।")
+    except: st.write("এখনো কোনো ডাটা নেই।")
 
 # --- সাইডবার ---
 st.sidebar.title("⚙️ টুলস")
 with st.sidebar.expander("📥 QR কোড তৈরি"):
-    qr_id = st.text_input("আইডি দিন")
+    qr_id = st.text_input("আইডি দিন (QR এর জন্য)")
     if qr_id:
         qr_link = f"{APP_URL}?rider={qr_id.upper().replace(' ', '%20')}"
         qr_img = qrcode.make(qr_link)
