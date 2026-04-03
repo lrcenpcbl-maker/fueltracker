@@ -11,12 +11,12 @@ st.set_page_config(page_title="FuelGuard Pro", page_icon="⛽", layout="wide")
 LOCKOUT_HOURS = 72
 APP_URL = "https://fuel-tracker.streamlit.app" 
 
-# ডাইনামিক পিন জেনারেটর (প্রতিদিন পরিবর্তন হবে)
+# ডাইনামিক পিন জেনারেটর (Base PIN + আজকের তারিখ)
 def get_daily_pin():
     try:
         base_pin = st.secrets["BASE_PIN"] 
     except:
-        base_pin = "1234" # ডিফল্ট পিন
+        base_pin = "1234" # secrets.toml এ না থাকলে এটি ডিফল্ট
     day_str = datetime.now().strftime("%d") 
     return f"{base_pin}{day_str}"
 
@@ -32,16 +32,15 @@ def show_advanced_manual():
     ### ⛽ নতুন সিস্টেম আপডেট:
     
     #### 👤 ১. রাইডার পোর্টাল:
-    - পিন ছাড়াই **রেজিস্ট্রেশন** এবং **Eligibility** চেক করা যাবে।
+    - পিন ছাড়াই **রেজিস্ট্রেশন** এবং **Eligibility** চেক করা যাবে।
+    - এখন থেকে নিজের **সর্বশেষ কত লিটার** তেল নিয়েছেন তাও দেখা যাবে।
     
     #### 🏢 ২. পাম্প স্টেশন:
-    - **Daily PIN:** নিরাপত্তার জন্য প্রতিদিন পিন পরিবর্তিত হবে ।
-    - **ঐচ্ছিক ছবি:** গাড়ির ছবি তোলা এখন আর বাধ্যতামূলক নয়। ছবি ছাড়াও ট্রানজ্যাকশন সেভ করা যাবে।
+    - **Daily PIN:** নিরাপত্তার জন্য প্রতিদিন পিন পরিবর্তিত হবে।
+    - **ঐচ্ছিক ছবি:** গাড়ির ছবি তোলা এখন আর বাধ্যতামূলক নয়। 
     
     #### ✅ স্মার্ট ফিচার:
-    - **৭২ ঘণ্টা লক** এবং ডাটা সেভ হওয়ার পর **অটো-রিফ্রেশ**।
-
-    **অ্যাডমিনের সাথে যোগাযোগঃ  vpersonal1123@gmail.com**
+    - **৭২ ঘণ্টা লক** এবং ডাটা সেভ হওয়ার পর **অটো-রিফ্রেশ**।
     """)
     if st.button("বুঝেছি, প্রবেশ করুন"):
         st.session_state.show_advanced_manual = False
@@ -98,7 +97,7 @@ if st.session_state.user_role is None:
 
 # --- ৫. রাইডার ইন্টারফেস ---
 if st.session_state.user_role == "Rider":
-    if st.sidebar.button("⬅️ Home"):
+    if st.sidebar.button("⬅️ Home (Role Change)"):
         st.session_state.user_role = None
         st.rerun()
         
@@ -106,33 +105,49 @@ if st.session_state.user_role == "Rider":
     t1, t2 = st.tabs(["🔍 চেক এলিজিবিলিটি", "📝 নতুন নিবন্ধন"])
     
     with t1:
-        search_id = st.text_input("রেজিস্ট্রেশন নাম্বার লিখুন")
+        search_id = st.text_input("রেজিস্ট্রেশন নাম্বার লিখুন (যেমন: DHAKA METRO HA 12-3456)")
         if search_id:
             s_id = clean_id(search_id)
             df['tmp'] = df['RiderID'].apply(clean_id)
             match = df[df['tmp'] == s_id]
             if not match.empty:
                 r = match.iloc[0]
-                st.info(f"রাইডার: **{r['Name']}**")
+                st.info(f"👤 রাইডার: **{r['Name']}**")
+                
+                # সর্বশেষ লিটার প্রদর্শন
+                last_liters = r.get('Liters', 0)
+                st.write(f"⛽ সর্বশেষ রিফিল: **{last_liters} লিটার**")
+
                 last_val = str(r['Last_Refill']).strip()
                 if last_val and last_val.lower() != "nan" and last_val != "":
                     unlock = datetime.strptime(last_val, "%Y-%m-%d %H:%M:%S") + timedelta(hours=LOCKOUT_HOURS)
                     if datetime.now() < unlock:
                         st.error(f"🚫 লকড! পরবর্তীতে পাবেন: {unlock.strftime('%b %d, %I:%M %p')}")
-                    else: st.success("✅ জ্বালানি পাওয়ার যোগ্য")
-                else: st.success("✅ জ্বালানি পাওয়ার যোগ্য")
-            else: st.warning("আইডি পাওয়া যায়নি।")
+                    else: st.success("✅ জ্বালানি পাওয়ার যোগ্য।")
+                else: st.success("✅ জ্বালানি পাওয়ার যোগ্য।")
+            else: st.warning("আইডি পাওয়া যায়নি।")
 
     with t2:
-        with st.form("reg"):
-            d = st.selectbox("জেলা", sorted(BD_DISTRICTS)); s = st.selectbox("সিরিজ", SERIES_LIST)
-            n = st.text_input("নাম্বার"); nm = st.text_input("নাম")
-            if st.form_submit_button("রেজিস্ট্রেশন করুন"):
+        with st.form("reg_form"):
+            col_a, col_b = st.columns(2)
+            with col_a:
+                d = st.selectbox("জেলা", sorted(BD_DISTRICTS)); s = st.selectbox("সিরিজ", SERIES_LIST)
+            with col_b:
+                n = st.text_input("নাম্বার (যেমন: 12-3456)"); nm = st.text_input("রাইডারের নাম")
+            
+            if st.form_submit_button("নিবন্ধন সম্পন্ন করুন"):
                 if n and nm:
                     f_id = f"{d}-{s}-{n}".upper()
-                    new_row = pd.DataFrame([{"RiderID": f_id, "Name": nm, "Last_Refill": "", "Liters": 0}])
-                    spread.df_to_sheet(pd.concat([df.drop(columns=['tmp'] if 'tmp' in df.columns else []), new_row], ignore_index=True), index=False, replace=True)
-                    st.cache_data.clear(); st.success(f"সফল! আইডি: {f_id}"); st.rerun()
+                    df_check = fetch_data(spread)
+                    if clean_id(f_id) in df_check['RiderID'].apply(clean_id).values:
+                        st.error("এই আইডিটি ইতিমধ্যে নিবন্ধিত!")
+                    else:
+                        new_row = pd.DataFrame([{"RiderID": f_id, "Name": nm, "Last_Refill": "", "Liters": 0}])
+                        final_reg_df = pd.concat([df_check, new_row], ignore_index=True)
+                        spread.df_to_sheet(final_reg_df, index=False, replace=True)
+                        st.cache_data.clear()
+                        st.success(f"সফল! আপনার আইডি: {f_id}"); st.balloons()
+                else: st.warning("সব তথ্য প্রদান করুন।")
 
 # --- ৬. পাম্প স্টেশন ইন্টারফেস ---
 elif st.session_state.user_role == "Pump":
@@ -141,12 +156,12 @@ elif st.session_state.user_role == "Pump":
 
     if not st.session_state.pump_auth:
         st.title("🏢 Pump Station Login")
-        pin_in = st.text_input("আজকের ডেইলি পিন (Daily PIN)", type="password")
-        if st.button("প্রবেশ করুন"):
+        pin_in = st.text_input("আজকের ডেইলি পিন দিন", type="password")
+        if st.button("Login"):
             if pin_in == CURRENT_DAILY_PIN:
                 st.session_state.pump_auth = True
                 st.rerun()
-            else: st.error("ভুল পিন! প্রতিদিন পিন পরিবর্তন হয়।")
+            else: st.error("ভুল পিন!")
         if st.button("⬅️ ব্যাক"):
             st.session_state.user_role = None
             st.rerun()
@@ -161,19 +176,25 @@ elif st.session_state.user_role == "Pump":
             s_id = clean_id(p_id)
             df['tmp'] = df['RiderID'].apply(clean_id)
             idx_list = df.index[df['tmp'] == s_id].tolist()
+            
             if idx_list:
                 idx = idx_list[0]
-                st.write(f"রাইডার: **{df.at[idx, 'Name']}**")
+                st.write(f"👤 রাইডার: **{df.at[idx, 'Name']}**")
+                
+                # সর্বশেষ লিটার প্রদর্শন
+                last_liters_p = df.at[idx, 'Liters']
+                st.write(f"⛽ সর্বশেষ রিফিল: **{last_liters_p} লিটার**")
                 
                 # ৭২ ঘণ্টা লক চেক
                 eligible = True
+                unlock_time = None
                 last_refill_val = str(df.at[idx, 'Last_Refill']).strip()
                 if last_refill_val and last_refill_val.lower() != "nan" and last_refill_val != "":
-                    unlock = datetime.strptime(last_refill_val, "%Y-%m-%d %H:%M:%S") + timedelta(hours=LOCKOUT_HOURS)
-                    if datetime.now() < unlock: eligible = False
+                    unlock_time = datetime.strptime(last_refill_val, "%Y-%m-%d %H:%M:%S") + timedelta(hours=LOCKOUT_HOURS)
+                    if datetime.now() < unlock_time: eligible = False
 
                 if not eligible:
-                    st.error(f"🚫 এই আইডিটি লক করা। পরবর্তীতে পাবেন: {unlock.strftime('%b %d, %I:%M %p')}")
+                    st.error(f"🚫 আইডিটি লক করা। পরবর্তীতে পাবেন: {unlock_time.strftime('%b %d, %I:%M %p')}")
                 else:
                     c1, c2 = st.columns(2)
                     with c1:
@@ -186,5 +207,5 @@ elif st.session_state.user_role == "Pump":
                             st.cache_data.clear()
                             st.success("সেভ হয়েছে!"); st.balloons(); st.rerun()
                     with c2:
-                        photo = st.camera_input("গাড়ির ছবি (ঐচ্ছিক)")
-            else: st.warning("আইডি পাওয়া যায়নি।")
+                        photo = st.camera_input("গাড়ির ছবি (ঐচ্ছিক)")
+            else: st.warning("আইডি পাওয়া যায়নি।")
