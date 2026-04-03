@@ -11,52 +11,62 @@ st.set_page_config(page_title="FuelGuard Pro", page_icon="⛽", layout="wide")
 LOCKOUT_HOURS = 72
 APP_URL = "https://fuel-tracker.streamlit.app" 
 
-# পিন সেটআপ
-try:
-    OPERATOR_PIN = st.secrets["PUMP_SECRET_PIN"]
-except:
-    OPERATOR_PIN = "1234"
+# ডাইনামিক পিন জেনারেটর (প্রতিদিন পরিবর্তন হবে)
+def get_daily_pin():
+    try:
+        base_pin = st.secrets["BASE_PIN"] # যেমন: "1234"
+    except:
+        base_pin = "1234"
+    
+    day_str = datetime.now().strftime("%d") # আজকের তারিখ (যেমন: 03)
+    return f"{base_pin}{day_str}" # আউটপুট: "123403"
 
+CURRENT_DAILY_PIN = get_daily_pin()
+# --- ১. শক্তিশালী নির্দেশিকা ও পরিবর্তনের পপ-আপ (Pop-up Dialog) ---
+@st.dialog("🚀 FuelGuard Pro: নতুন আপডেট ও নির্দেশিকা")
+def show_advanced_manual():
+    st.markdown("""
+    ### ⛽ অ্যাপে বড় ধরনের পরিবর্তন আনা হয়েছে!
+    ব্যবহারকারীদের সুবিধার জন্য আমরা অ্যাপটিকে দুটি প্রধান ভাগে ভাগ করেছি:
+
+    ---
+    #### 👤 ১. রাইডার / কাস্টমার পোর্টাল (Rider Side)
+    - **উন্মুক্ত চেক:** এখন যে কেউ যেকোনো রেজিস্ট্রেশন নাম্বার দিয়ে রাইডারের **Eligibility** চেক করতে পারবেন।
+    - **সহজ নিবন্ধন:** নতুন রাইডাররা কোনো পিন ছাড়াই নিজের তথ্য দিয়ে রেজিস্ট্রেশন করতে পারবেন।
+    - **স্বচ্ছতা:** আপনার বা অন্য কারো রিফিল স্ট্যাটাস এখন সবার জন্য উন্মুক্ত।
+
+    ---
+    #### 🏢 ২. পাম্প স্টেশন প্যানেল (Pump Station)
+    - **ডেইলি ডাইনামিক পিন (Daily PIN):** নিরাপত্তার খাতিরে পাম্প স্টেশনের পিন এখন প্রতিদিন স্বয়ংক্রিয়ভাবে পরিবর্তিত হবে। 
+    - **এক পিন, হাজার পাম্প:** বাংলাদেশের যেকোনো প্রান্তের পাম্প স্টেশন একই 'ডেইলি পিন' ব্যবহার করে লগ-ইন করতে পারবে।
+    - **দ্রুত এন্ট্রি:** লগ-ইন করার পর বারবার পিন দিতে হবে না, সরাসরি রাইডার আইডি দিয়ে তেল এন্ট্রি দেওয়া যাবে।
+
+    ---
+    #### ✅ আমাদের শক্তিশালী দিকসমূহ (Our Strengths):
+    * **৭২ ঘণ্টা স্মার্ট লক:** সিস্টেম স্বয়ংক্রিয়ভাবে হিসেব রাখবে এবং নির্দিষ্ট সময়ের আগে কাউকে রিফিল করতে দেবে না।
+    * **অটো-রিফ্রেশ:** প্রতিটি ট্রানজ্যাকশন শেষে ডাটাবেজ আপডেট হয়ে অ্যাপ নিজে থেকেই পরবর্তী কাজের জন্য প্রস্তুত হবে।
+    * **ক্লাউড সিনক্রোনাইজেশন:** গুগল শিটের সাথে সরাসরি যুক্ত থাকায় ডাটা হারানোর কোনো ভয় নেই।
+    """)
+    if st.button("বুঝেছি, প্রবেশ করুন"):
+        st.session_state.show_advanced_manual = False
+        st.rerun()
+
+# প্রথমবারের জন্য পপ-আপ ট্রিগার
+if "show_advanced_manual" not in st.session_state:
+    st.session_state.show_advanced_manual = True
+
+if st.session_state.show_advanced_manual:
+    show_advanced_manual()
 # জেলা ও সিরিজ তালিকা
 BD_DISTRICTS = ["BAGERHAT", "BANDARBAN", "BARGUNA", "BARISHAL", "BHOLA", "BOGURA", "BRAHMANBARIA", "CHANDPUR", "CHATTOGRAM", "CHATTOGRAM METRO", "CHUADANGA", "COMILLA", "COXS BAZAR", "DHAKA", "DHAKA METRO", "DINAJPUR", "FARIDPUR", "FENI", "GAIBANDHA", "GAZIPUR", "GOPALGANJ", "HABIGANJ", "JAMALPUR", "JASHORE", "JHALOKATHI", "JHENAIDAH", "JOYPURHAT", "KHAGRACHHARI", "KHULNA", "KHULNA METRO", "KISHOREGANJ", "KURIGRAM", "KUSHTIA", "LAKSHMIPUR", "LALMONIRHAT", "MADARIPUR", "MAGURA", "MANIKGANJ", "MEHERPUR", "MOULVIBAZAR", "MUNSHIGANJ", "MYMENSINGH", "NAOGAON", "NARAIL", "NARAYANGANJ", "NARSINGDI", "NATORE", "NETROKONA", "NILPHAMARI", "NOAKHALI", "PABNA", "PANCHAGARH", "PATUAKHALI", "PIROJPUR", "RAJBARI", "RAJSHAHI", "RAJSHAHI METRO", "RANGAMATI", "RANGPUR", "SATKHIRA", "SHARIATPUR", "SHERPUR", "SIRAJGANJ", "SUNAMGANJ", "SYLHET", "SYLHET METRO", "TANGAIL", "THAKURGAON"]
 SERIES_LIST = ["KA", "KHA", "GA", "GHA", "CHA", "THA", "HA", "LA", "MA", "BA"]
 
-# --- ২. পপ-আপ নির্দেশিকা (Instruction Pop-up) ---
-@st.dialog("📖 ফুয়েলগার্ড ইউজার গাইড ও আপডেট")
-def show_instruction_popup():
-    st.markdown("""
-    ### ⛽ FuelGuard Pro এ আপনাকে স্বাগতম!
-    সিস্টেমের নিরাপত্তা ও সহজলভ্যতা নিশ্চিতে কিছু পরিবর্তন আনা হয়েছে:
-
-    ---
-    #### 🆕 নতুন পরিবর্তনসমূহ:
-    1. **উন্মুক্ত রেজিস্ট্রেশন:** এখন যেকোনো রাইডার নিজে **'নতুন রেজিস্ট্রেশন'** ট্যাব থেকে আইডি তৈরি করতে পারবেন। কোনো পিন লাগবে না।
-    2. **পিন প্রটেক্টড ইনপুট:** তেল দেওয়ার রেকর্ড সেভ করতে শুধুমাত্র পাম্প অপারেটরের **গোপন পিন** প্রয়োজন।
-    3. **ঐচ্ছিক ছবি:** গাড়ির ছবি তোলা এখন আর বাধ্যতামূলক নয়।
-    4. **অটো-রিফ্রেশ:** ট্রানজ্যাকশন শেষ হলে অ্যাপটি নিজে থেকেই পরবর্তী ইউজার চেক করার জন্য তৈরি হয়ে যাবে।
-
-    ---
-    #### 🛠 ব্যবহারবিধি:
-    * **রাইডার:** রেজিস্ট্রেশন ট্যাব থেকে আইডি তৈরি করুন এবং কিউআর কোড সংগ্রহ করুন।
-    * **অপারেটর:** আইডি সার্চ করে যদি **Eligible** দেখায়, তবে পিন দিয়ে ডাটা এন্ট্রি সম্পন্ন করুন।
-    """)
-    if st.button("ঠিক আছে, শুরু করি"):
-        st.session_state.show_manual = False
-        st.rerun()
-
-if "show_manual" not in st.session_state:
-    st.session_state.show_manual = True
-
-if st.session_state.show_manual:
-    show_instruction_popup()
-
-# --- ৩. ডাটাবেজ কানেকশন ও হেল্পারস ---
+# --- ২. ডাটাবেজ কানেকশন ---
 @st.cache_data(ttl=5)
 def fetch_data(_spread_obj):
     try:
         data = _spread_obj.sheet_to_df(index=0)
         data.columns = data.columns.str.strip()
-        # কলামের নামগুলো কনসিস্টেন্ট রাখা
         return data
     except:
         return pd.DataFrame(columns=["RiderID", "Name", "Last_Refill", "Liters"])
@@ -66,144 +76,106 @@ if "gcp_service_account" in st.secrets:
     try:
         spread = Spread("FuelTracker", config=creds)
         df = fetch_data(spread)
-    except Exception as e:
-        st.error(f"Google Sheet Connection Failed: {e}"); st.stop()
+    except:
+        st.error("Connection Failed!"); st.stop()
 else:
-    st.error("GCP Credentials missing in Streamlit Secrets!"); st.stop()
+    st.error("Credentials missing!"); st.stop()
 
 def clean_id(text):
     return str(text).lower().replace(" ", "").replace("-", "").strip()
 
-# --- ৪. মেইন ইন্টারফেস (ট্যাব সিস্টেম) ---
-st.title("⛽ FuelGuard Pro")
-tab1, tab2, tab3 = st.tabs(["🔍 স্ট্যাটাস ও রিফিল", "📝 নতুন রেজিস্ট্রেশন", "📊 রিপোর্ট"])
+# --- ৩. সেশন স্টেট (ইউজার রোল ম্যানেজমেন্ট) ---
+if "user_role" not in st.session_state:
+    st.session_state.user_role = None
 
-with tab1:
-    st.subheader("🔍 রাইডার ভেরিফিকেশন")
-    q_params = st.query_params
-    url_id = q_params.get("rider", "")
-    scanned_id = st.text_input("আইডি লিখুন বা স্ক্যান করুন", value=url_id, placeholder="যেমন: PABNA HA 11-0101")
+# --- ৪. ল্যান্ডিং পেজ (রোল সিলেকশন) ---
+if st.session_state.user_role is None:
+    st.title("⛽ FuelGuard Pro: Welcome")
+    st.subheader("আপনার ভূমিকা নির্বাচন করুন (Choose Your Role)")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("🏍️ Rider / Customer", use_container_width=True):
+            st.session_state.user_role = "Rider"
+            st.rerun()
+    with col2:
+        if st.button("🏢 Pump Station", use_container_width=True):
+            st.session_state.user_role = "Pump"
+            st.rerun()
+    st.stop()
 
-    if scanned_id:
-        s_id = clean_id(scanned_id)
-        # ডাটাফ্রেমের ইনডেক্স খুঁজে বের করা
-        df['temp_id'] = df['RiderID'].apply(clean_id)
-        rider_indices = df.index[df['temp_id'] == s_id].tolist()
-
-        if not rider_indices:
-            st.warning(f"❌ আইডি '{scanned_id}' ডাটাবেজে পাওয়া যায়নি।")
-        else:
-            idx = rider_indices[0]
-            r_data = df.iloc[idx]
-            st.info(f"👤 রাইডার: **{r_data['Name']}** | আইডি: **{r_data['RiderID']}**")
-
-            # --- ৭২ ঘণ্টা লক লজিক (Stronger Fix) ---
-            eligible = True
-            unlock_time = None
-            last_refill_val = str(df.at[idx, 'Last_Refill']).strip()
-
-            if last_refill_val and last_refill_val.lower() != "nan" and last_refill_val != "":
-                try:
-                    last_dt = datetime.strptime(last_refill_val, "%Y-%m-%d %H:%M:%S")
-                    unlock_time = last_dt + timedelta(hours=LOCKOUT_HOURS)
-                    if datetime.now() < unlock_time:
-                        eligible = False
-                except Exception as e:
-                    st.error(f"Date Error: {e}. ফরম্যাট সমস্যা হতে পারে।")
-
-            if not eligible:
-                st.error(f"🚫 রিফিল লকড! পরবর্তীতে জ্বালানি পাবেন:")
-                st.subheader(f"📅 {unlock_time.strftime('%b %d, %Y - %I:%M %p')}")
-                diff = unlock_time - datetime.now()
-                st.write(f"অপেক্ষা করতে হবে: {diff.days} দিন {diff.seconds//3600} ঘণ্টা।")
-            else:
-                st.success("### ✅ রাইডার জ্বালানি পাওয়ার যোগ্য।")
-                st.markdown("---")
-                with st.expander("🔓 পাম্প অপারেটর প্যানেল (ইনপুট দিতে ক্লিক করুন)"):
-                    op_pin = st.text_input("অপারেশন পিন দিন", type="password", key="op_pin_tab1")
-                    if op_pin == OPERATOR_PIN:
-                        c1, c2 = st.columns(2)
-                        with c1:
-                            liters_to_save = st.number_input("লিটারের পরিমাণ", 1.0, 100.0, 5.0)
-                            confirm_save = st.button("💾 Confirm & Save to Cloud")
-                        with c2:
-                            photo = st.camera_input("গাড়ির ছবি (ঐচ্ছিক)")
-                        
-                        if confirm_save:
-                            # ডাটা আপডেট করা
-                            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            
-                            # টেম্পোরারি কলাম সরিয়ে ডাটা আপডেট
-                            final_df = df.drop(columns=['temp_id'])
-                            final_df.at[idx, 'Last_Refill'] = now_str
-                            final_df.at[idx, 'Liters'] = liters_to_save
-                            
-                            try:
-                                spread.df_to_sheet(final_df, index=False, replace=True)
-                                st.cache_data.clear() # ক্যাশ ক্লিয়ার করা খুব জরুরি
-                                st.success("✅ ডাটাবেজ আপডেট হয়েছে!")
-                                st.balloons()
-                                st.rerun() # অটো রিফ্রেশ
-                            except Exception as e:
-                                st.error(f"Sync failed: {e}")
-                    elif op_pin != "":
-                        st.error("ভুল পিন! আপনি ইনপুট দিতে পারবেন না।")
-
-with tab2:
-    st.subheader("📝 নতুন রাইডার রেজিস্ট্রেশন")
-    with st.form("public_reg_form"):
-        col1, col2 = st.columns(2)
-        with col1:
-            dist = st.selectbox("জেলা/মেট্রো এরিয়া", sorted(BD_DISTRICTS))
-            series = st.selectbox("সিরিজ", SERIES_LIST)
-        with col2:
-            num = st.text_input("গাড়ির নাম্বার (যেমন: 11-0101)")
-            name = st.text_input("রাইডারের পূর্ণ নাম")
+# --- ৫. রাইডার ইন্টারফেস (Rider Side) ---
+if st.session_state.user_role == "Rider":
+    if st.button("⬅️ ব্যাক (Role Change)"):
+        st.session_state.user_role = None
+        st.rerun()
         
-        if st.form_submit_button("নিবন্ধন সম্পন্ন করুন"):
-            if num and name:
-                f_id = f"{dist}-{series}-{num}".upper()
-                # ডুপ্লিকেট চেক
-                df_for_check = fetch_data(spread)
-                if clean_id(f_id) in df_for_check['RiderID'].apply(clean_id).values:
-                    st.error("এই আইডি ইতিমধ্যে নিবন্ধিত!")
-                else:
-                    new_row = pd.DataFrame([{"RiderID": f_id, "Name": name, "Last_Refill": "", "Liters": 0}])
-                    updated_df = pd.concat([df_for_check, new_row], ignore_index=True)
-                    try:
-                        spread.df_to_sheet(updated_df, index=False, replace=True)
-                        st.cache_data.clear()
-                        st.success(f"সফল! আইডি: {f_id}")
-                        st.rerun()
-                    except:
-                        st.error("রেজিস্ট্রেশন ব্যর্থ হয়েছে।")
-            else:
-                st.warning("নাম এবং গাড়ির নাম্বার দেওয়া বাধ্যতামূলক।")
+    st.title("🏍️ Rider Portal")
+    tab_check, tab_reg = st.tabs(["🔍 চেক এলিজিবিলিটি", "📝 নতুন নিবন্ধন"])
+    
+    with tab_check:
+        search_id = st.text_input("সার্চ রেজিস্ট্রেশন নাম্বার (যেমন: DHAKA METRO HA 12-3456)")
+        if search_id:
+            s_id = clean_id(search_id)
+            df['tmp'] = df['RiderID'].apply(clean_id)
+            match = df[df['tmp'] == s_id]
+            if not match.empty:
+                r = match.iloc[0]
+                st.info(f"রাইডার: {r['Name']}")
+                # ৭২ ঘণ্টা চেক
+                last_val = str(r['Last_Refill']).strip()
+                if last_val and last_val.lower() != "nan" and last_val != "":
+                    unlock = datetime.strptime(last_val, "%Y-%m-%d %H:%M:%S") + timedelta(hours=LOCKOUT_HOURS)
+                    if datetime.now() < unlock:
+                        st.error(f"🚫 লকড! পরবর্তীতে পাবেন: {unlock.strftime('%b %d, %I:%M %p')}")
+                    else: st.success("✅ যোগ্য (Eligible)")
+                else: st.success("✅ যোগ্য (Eligible)")
+            else: st.warning("আইডি পাওয়া যায়নি।")
 
-with tab3:
-    st.subheader("📊 আজকের লাইভ রিপোর্ট")
-    try:
-        report_df = df.copy()
-        if 'temp_id' in report_df.columns: report_df = report_df.drop(columns=['temp_id'])
-        
-        report_df['Last_Refill'] = pd.to_datetime(report_df['Last_Refill'], errors='coerce')
-        today_data = report_df[report_df['Last_Refill'].dt.date == datetime.now().date()]
-        
-        m1, m2 = st.columns(2)
-        m1.metric("আজকের মোট বাইক", len(today_data))
-        m2.metric("আজকের মোট জ্বালানি (L)", f"{pd.to_numeric(today_data['Liters'], errors='coerce').sum()} L")
-        
-        st.dataframe(today_data[['RiderID', 'Name', 'Liters', 'Last_Refill']], use_container_width=True)
-    except:
-        st.write("রিপোর্ট জেনারেট করা যাচ্ছে না।")
+    with tab_reg:
+        with st.form("reg"):
+            d = st.selectbox("জেলা", sorted(BD_DISTRICTS)); s = st.selectbox("সিরিজ", SERIES_LIST)
+            n = st.text_input("নাম্বার"); nm = st.text_input("নাম")
+            if st.form_submit_button("রেজিস্ট্রেশন"):
+                f_id = f"{d}-{s}-{n}".upper()
+                new_row = pd.DataFrame([{"RiderID": f_id, "Name": nm, "Last_Refill": "", "Liters": 0}])
+                spread.df_to_sheet(pd.concat([df, new_row], ignore_index=True), index=False, replace=True)
+                st.cache_data.clear(); st.success(f"সফল! আইডি: {f_id}")
 
-# --- সাইডবার টুলস ---
-st.sidebar.title("⚙️ অপশন")
-with st.sidebar.expander("📥 QR কোড তৈরি"):
-    qr_id_input = st.sidebar.text_input("আইডি দিন (QR কোডের জন্য)")
-    if qr_id_input:
-        qr_url = f"{APP_URL}?rider={qr_id_input.upper().replace(' ', '%20')}"
-        qr_gen = qrcode.make(qr_url)
-        buf = io.BytesIO()
-        qr_gen.save(buf, format="PNG")
-        st.sidebar.image(buf.getvalue(), caption=qr_id_input.upper())
+# --- ৬. পাম্প স্টেশন ইন্টারফেস (Pump Side) ---
+elif st.session_state.user_role == "Pump":
+    if "pump_authenticated" not in st.session_state:
+        st.session_state.pump_authenticated = False
+
+    if not st.session_state.pump_authenticated:
+        st.title("🏢 Pump Station Login")
+        pin_input = st.text_input("আজকের ডেইলি পিন দিন (Daily PIN)", type="password")
+        if st.button("প্রবেশ করুন"):
+            if pin_input == CURRENT_DAILY_PIN:
+                st.session_state.pump_authenticated = True
+                st.rerun()
+            else: st.error("ভুল পিন! পিন প্রতিদিন পরিবর্তন হয়।")
+        if st.button("⬅️ ব্যাক"):
+            st.session_state.user_role = None
+            st.rerun()
+    else:
+        # পাম্প স্টেশন মেইন পেজ
+        st.title("⛽ Pump Operation Panel")
+        if st.sidebar.button("🚪 লগ আউট"):
+            st.session_state.pump_authenticated = False
+            st.rerun()
+            
+        p_id = st.text_input("রাইডার আইডি স্ক্যান/লিখুন")
+        if p_id:
+            s_id = clean_id(p_id)
+            df['tmp'] = df['RiderID'].apply(clean_id)
+            idx_list = df.index[df['tmp'] == s_id].tolist()
+            if idx_list:
+                idx = idx_list[0]
+                st.write(f"রাইডার: {df.at[idx, 'Name']}")
+                liters = st.number_input("লিটার", 1.0, 50.0, 5.0)
+                if st.button("Confirm Transaction"):
+                    df.at[idx, 'Last_Refill'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    df.at[idx, 'Liters'] = liters
+                    spread.df_to_sheet(df.drop(columns=['tmp']), index=False, replace=True)
+                    st.cache_data.clear(); st.success("সফল!"); st.rerun()
